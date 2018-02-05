@@ -1,0 +1,5 @@
+vendor/
+.vscode/
+*.exe
+*.db
+*.db.lock
