@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/boltdb/bolt"
 )
@@ -44,13 +45,18 @@ var token *authToken
 
 func init() {
 	conf = &cliConfig{}
-	flag.StringVar(&conf.command, "command", "list-accounts", "Command to run: init, list-accounts")
+	flag.StringVar(&conf.command, "command", "list-accounts", "Command to run: init, list-accounts, activities")
 }
 
 func main() {
 	flag.Parse()
 
 	err := setupDB()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = initToken()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,6 +70,12 @@ func main() {
 		if err == nil {
 			log.Printf("Loaded accounts: %v", accounts)
 		}
+	case "activities":
+		accountID := flag.Arg(0)
+		if len(accountID) == 0 {
+			err = fmt.Errorf("activities command requires an accountID argument")
+		}
+		requestActivities(accountID)
 	default:
 		err = fmt.Errorf("invalid command: %s", conf.command)
 	}
@@ -74,7 +86,7 @@ func main() {
 	os.Exit(0)
 }
 
-func setup() error {
+func initToken() error {
 	err := loadToken()
 	if err != nil {
 		refreshTokenStr, found := os.LookupEnv("REFRESH_TOKEN")
@@ -92,7 +104,10 @@ func setup() error {
 			return err
 		}
 	}
+	return nil
+}
 
+func setup() error {
 	accounts, err := requestAccounts()
 	if err != nil {
 		return err
@@ -307,4 +322,48 @@ func loadAccounts() ([]account, error) {
 	}
 	log.Println("Successfully loaded Accounts.")
 	return accounts, nil
+}
+
+func requestActivities(accountId string) error {
+	startDate := time.Now()
+	startDate = startDate.AddDate(0, 0, -60)
+
+	endDate := time.Now()
+	endDate = endDate.AddDate(0, 0, -30)
+
+	url := fmt.Sprintf("%sv1/accounts/%s/activities?startTime=%s&endTime=%s", token.APIServer, accountId, startDate.Format(time.RFC3339), endDate.Format(time.RFC3339))
+	log.Printf("Sending GET to %s", url)
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("err creating request, %v", err)
+	}
+
+	auth := fmt.Sprintf("Bearer %s", token.AccessToken)
+	request.Header.Set("Authorization", auth)
+	client := &http.Client{}
+	res, err := client.Do(request)
+	if err != nil {
+		return fmt.Errorf("error getting accounts, %v", err)
+	}
+	defer res.Body.Close()
+
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return fmt.Errorf("error reading body: %s", err)
+	}
+	log.Printf("Response: %s\n", string(body))
+
+	if res.StatusCode != 200 {
+		return fmt.Errorf("error return code: %d", res.StatusCode)
+	}
+
+	// accounts := &accountReq{}
+	// err = json.Unmarshal([]byte(body), accounts)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error parsing JSON: %s", err)
+	// }
+	log.Printf("Activities requested successfully.")
+	// log.Printf("%+v\n", accounts)
+
+	return nil
 }
