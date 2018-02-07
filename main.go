@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -10,6 +11,10 @@ import (
 
 	"github.com/boltdb/bolt"
 )
+
+type cliConfig struct {
+	command string
+}
 
 type authToken struct {
 	AccessToken  string `json:"access_token"`
@@ -33,39 +38,71 @@ type accountReq struct {
 	UserID   int       `json:"userId"`
 }
 
+var conf *cliConfig
 var db *bolt.DB
-
 var token *authToken
 
+func init() {
+	conf = &cliConfig{}
+	flag.StringVar(&conf.command, "command", "list-accounts", "Command to run: init, list-accounts")
+}
+
 func main() {
+	flag.Parse()
+
 	err := setupDB()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = loadToken()
-	if err != nil {
-		refreshTokenStr, found := os.LookupEnv("REFRESH_TOKEN")
-		if !found {
-			log.Fatal("No token saved in DB, and no REFRESH_TOKEN env var set.")
+	switch conf.command {
+	case "setup":
+		err = setup()
+	case "list-accounts":
+		var accounts []account
+		accounts, err = loadAccounts()
+		if err == nil {
+			log.Printf("Loaded accounts: %v", accounts)
 		}
-		err = requestToken(refreshTokenStr)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-	} else {
-		err = refreshToken()
-		if err != nil {
-			log.Fatal(err)
-		}
+	default:
+		err = fmt.Errorf("invalid command: %s", conf.command)
 	}
 
-	err = readAccounts()
 	if err != nil {
 		log.Fatal(err)
 	}
 	os.Exit(0)
+}
+
+func setup() error {
+	err := loadToken()
+	if err != nil {
+		refreshTokenStr, found := os.LookupEnv("REFRESH_TOKEN")
+		if !found {
+			return fmt.Errorf("no token saved in DB, and no REFRESH_TOKEN env var set")
+		}
+		err = requestToken(refreshTokenStr)
+
+		if err != nil {
+			return err
+		}
+	} else {
+		err = refreshToken()
+		if err != nil {
+			return err
+		}
+	}
+
+	accounts, err := requestAccounts()
+	if err != nil {
+		return err
+	}
+
+	err = saveAccounts(accounts)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func setupDB() error {
@@ -77,7 +114,11 @@ func setupDB() error {
 	err = db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists([]byte("ROOT"))
 		if err != nil {
-			return fmt.Errorf("could not create root bucket: %v", err)
+			return fmt.Errorf("could not create ROOT bucket: %v", err)
+		}
+		_, err = tx.CreateBucketIfNotExists([]byte("ACCOUNTS"))
+		if err != nil {
+			return fmt.Errorf("could not create ACCOUNTS bucket: %v", err)
 		}
 		return nil
 	})
@@ -173,12 +214,12 @@ func refreshToken() error {
 	return requestToken(token.RefreshToken)
 }
 
-func readAccounts() error {
+func requestAccounts() (*accountReq, error) {
 	url := fmt.Sprintf("%sv1/accounts", token.APIServer)
 	log.Printf("Sending GET to %s", url)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("err creating request, %v", err)
+		return nil, fmt.Errorf("err creating request, %v", err)
 	}
 
 	auth := fmt.Sprintf("Bearer %s", token.AccessToken)
@@ -186,26 +227,84 @@ func readAccounts() error {
 	client := &http.Client{}
 	res, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("error getting accounts, %v", err)
+		return nil, fmt.Errorf("error getting accounts, %v", err)
 	}
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return fmt.Errorf("error reading body: %s", err)
+		return nil, fmt.Errorf("error reading body: %s", err)
 	}
 	// log.Printf("Response: %s\n", string(body))
 
 	if res.StatusCode != 200 {
-		return fmt.Errorf("error return code: %d", res.StatusCode)
+		return nil, fmt.Errorf("error return code: %d", res.StatusCode)
 	}
 
 	accounts := &accountReq{}
 	err = json.Unmarshal([]byte(body), accounts)
 	if err != nil {
-		return fmt.Errorf("error parsing JSON: %s", err)
+		return nil, fmt.Errorf("error parsing JSON: %s", err)
 	}
-	log.Printf("%+v\n", accounts)
+	log.Printf("Accounts requested successfully.")
+	// log.Printf("%+v\n", accounts)
 
+	return accounts, nil
+}
+
+func saveAccounts(accounts *accountReq) error {
+	err := db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket([]byte("ACCOUNTS"))
+		if bucket == nil {
+			return fmt.Errorf("couldn't get ACCOUNTS bucket")
+		}
+
+		for _, account := range accounts.Accounts {
+			accountBytes, err := json.Marshal(account)
+			if err != nil {
+				return fmt.Errorf("could not marshal entry json: %v", err)
+			}
+			err = bucket.Put([]byte(account.Number), accountBytes)
+			if err != nil {
+				return fmt.Errorf("could not insert account: %v", err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("could not save accounts, %v", err)
+	}
+	log.Println("Successfully saved Accounts.")
 	return nil
+}
+
+func loadAccounts() ([]account, error) {
+	accounts := make([]account, 0)
+	err := db.View(func(tx *bolt.Tx) error {
+		bk := tx.Bucket([]byte("ACCOUNTS"))
+		if bk == nil {
+			return fmt.Errorf("couldn't get ACCOUNTS bucket")
+		}
+
+		c := bk.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			acc := &account{}
+			err := json.Unmarshal(v, acc)
+			if err != nil {
+				return fmt.Errorf("could not unmarshal account: %v", err)
+			}
+
+			accounts = append(accounts, *acc)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("could not load accounts, %v", err)
+	}
+	log.Println("Successfully loaded Accounts.")
+	return accounts, nil
 }
