@@ -39,6 +39,27 @@ type accountReq struct {
 	UserID   int       `json:"userId"`
 }
 
+type Activity struct {
+		TradeDate       string  `json:"tradeDate"`
+		TransactionDate string  `json:"transactionDate"`
+		SettlementDate  string  `json:"settlementDate"`
+		Action          string  `json:"action"`
+		Symbol          string  `json:"symbol"`
+		SymbolID        int     `json:"symbolId"`
+		Description     string  `json:"description"`
+		Currency        string  `json:"currency"`
+		Quantity        int     `json:"quantity"`
+		Price           float64 `json:"price"`
+		GrossAmount     float64 `json:"grossAmount"`
+		Commission      float64 `json:"commission"`
+		NetAmount       float64 `json:"netAmount"`
+		Type            string  `json:"type"`
+}
+
+type ActivitiesReq struct {
+	Activities []Activity `json:"activities"`
+}
+
 var conf *cliConfig
 var db *bolt.DB
 var token *authToken
@@ -75,7 +96,7 @@ func main() {
 		if len(accountID) == 0 {
 			err = fmt.Errorf("activities command requires an accountID argument")
 		}
-		requestActivities(accountID)
+		err = requestActivities(accountID)
 	default:
 		err = fmt.Errorf("invalid command: %s", conf.command)
 	}
@@ -302,7 +323,11 @@ func requestActivities(accountID string) error {
 		if err != nil {
 			return fmt.Errorf("error requesting accounts, %v", err)
 		}
-		log.Printf("Response: %s\n", string(res))
+		_, err = saveActivities(res, accountID)
+		if err != nil {
+			return fmt.Errorf("error saving activities, %v", err)
+		}
+		// log.Printf("Response: %s\n", string(res))
 
 		startDate = startDate.AddDate(0, 0, -30)
 		endDate = endDate.AddDate(0, 0, -30)
@@ -311,6 +336,48 @@ func requestActivities(accountID string) error {
 	// log.Printf("%+v\n", accounts)
 
 	return nil
+}
+
+func saveActivities(body []byte, accountID string) ([]Activity, error) {
+	log.Println("Saving Activities.")
+
+	activities := &ActivitiesReq{}
+	err := json.Unmarshal(body, activities)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing JSON: %s", err)
+	}
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		bkName := fmt.Sprintf("ACTIVITIES-%s", accountID)
+		bk, err := tx.CreateBucketIfNotExists([]byte(bkName))
+		if err != nil {
+			return fmt.Errorf("couldn't get/create %s bucket, %v", bkName, err)
+		}
+
+		for _, activity := range activities.Activities {
+			logJSON(activity)
+			activityBytes, err := json.Marshal(activity)
+			if err != nil {
+				return fmt.Errorf("could not marshal entry json: %v", err)
+			}
+			err = bk.Put([]byte(activity.TradeDate), activityBytes)
+			if err != nil {
+				return fmt.Errorf("could not insert activity: %v", err)
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("could not save activities, %v", err)
+	}
+	return activities.Activities, nil
+}
+
+func logJSON(obj interface{}) {
+	out, _ := json.MarshalIndent(obj, "", "  ")
+	log.Printf("JSON: %s", string(out))
 }
 
 func doReq(url string, addAuth bool) ([]byte, error) {
