@@ -145,6 +145,7 @@ func setupDB() error {
 }
 
 func saveToken() error {
+	log.Println("Saving Token.")
 	tokenBytes, err := json.Marshal(token)
 	if err != nil {
 		return fmt.Errorf("could not marshal entry json: %v", err)
@@ -161,11 +162,11 @@ func saveToken() error {
 	if err != nil {
 		return fmt.Errorf("could not save token, %v", err)
 	}
-	log.Println("Successfully saved Token.")
 	return nil
 }
 
 func loadToken() error {
+	log.Println("Loading Token.")
 	err := db.View(func(tx *bolt.Tx) error {
 		tokenStr := tx.Bucket([]byte("ROOT")).Get([]byte("TOKEN"))
 		if tokenStr == nil {
@@ -185,7 +186,6 @@ func loadToken() error {
 	if err != nil {
 		return fmt.Errorf("could not load token, %v", err)
 	}
-	log.Println("Successfully loaded Token.")
 	return nil
 }
 
@@ -257,7 +257,7 @@ func requestAccounts() (*accountReq, error) {
 	}
 
 	accounts := &accountReq{}
-	err = json.Unmarshal([]byte(body), accounts)
+	err = json.Unmarshal(body, accounts)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing JSON: %s", err)
 	}
@@ -324,18 +324,35 @@ func loadAccounts() ([]account, error) {
 	return accounts, nil
 }
 
-func requestActivities(accountId string) error {
-	startDate := time.Now()
-	startDate = startDate.AddDate(0, 0, -60)
-
+func requestActivities(accountID string) error {
+	// start with the most recent 30 days
+	startDate := time.Now().AddDate(0, 0, -30)
 	endDate := time.Now()
-	endDate = endDate.AddDate(0, 0, -30)
 
-	url := fmt.Sprintf("%sv1/accounts/%s/activities?startTime=%s&endTime=%s", token.APIServer, accountId, startDate.Format(time.RFC3339), endDate.Format(time.RFC3339))
+	days := (365 * 2.25) / 30 // number of 30 day blocks in 2 1/4 years - go back to fall 2015
+	for i := 0; i <= int(days); i++ {
+		url := fmt.Sprintf("%sv1/accounts/%s/activities?startTime=%s&endTime=%s", token.APIServer, accountID, startDate.Format(time.RFC3339), endDate.Format(time.RFC3339))
+		res, err := doReq(url)
+		if err != nil {
+			return fmt.Errorf("error requesting accounts, %v", err)
+		}
+		log.Printf("Response: %s\n", string(res))
+
+		startDate = startDate.AddDate(0, 0, -30)
+		endDate = endDate.AddDate(0, 0, -30)
+	}
+
+	log.Printf("Activities requested successfully.")
+	// log.Printf("%+v\n", accounts)
+
+	return nil
+}
+
+func doReq(url string) ([]byte, error) {
 	log.Printf("Sending GET to %s", url)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("err creating request, %v", err)
+		return nil, fmt.Errorf("err creating request, %v", err)
 	}
 
 	auth := fmt.Sprintf("Bearer %s", token.AccessToken)
@@ -343,27 +360,18 @@ func requestActivities(accountId string) error {
 	client := &http.Client{}
 	res, err := client.Do(request)
 	if err != nil {
-		return fmt.Errorf("error getting accounts, %v", err)
+		return nil, fmt.Errorf("error getting accounts, %v", err)
 	}
 	defer res.Body.Close()
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return fmt.Errorf("error reading body: %s", err)
+		return nil, fmt.Errorf("error reading body: %s", err)
 	}
-	log.Printf("Response: %s\n", string(body))
 
 	if res.StatusCode != 200 {
-		return fmt.Errorf("error return code: %d", res.StatusCode)
+		return nil, fmt.Errorf("error return code: %d", res.StatusCode)
 	}
 
-	// accounts := &accountReq{}
-	// err = json.Unmarshal([]byte(body), accounts)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error parsing JSON: %s", err)
-	// }
-	log.Printf("Activities requested successfully.")
-	// log.Printf("%+v\n", accounts)
-
-	return nil
+	return body, nil
 }
