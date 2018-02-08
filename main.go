@@ -99,7 +99,7 @@ func initToken() error {
 			return err
 		}
 	} else {
-		err = refreshToken()
+		err = requestToken(token.RefreshToken)
 		if err != nil {
 			return err
 		}
@@ -191,26 +191,15 @@ func loadToken() error {
 
 func requestToken(refreshTokenStr string) error {
 	log.Println("Requesting new token.")
-	refreshURL := fmt.Sprintf("https://login.questrade.com/oauth2/token?grant_type=refresh_token&refresh_token=%s", refreshTokenStr)
+	url := fmt.Sprintf("https://login.questrade.com/oauth2/token?grant_type=refresh_token&refresh_token=%s", refreshTokenStr)
 
-	// log.Println(refreshURL)
-	res, err := http.Get(refreshURL)
+	body, err := doReq(url, false)
 	if err != nil {
-		return fmt.Errorf("error from Get: %q", err)
-	}
-	defer res.Body.Close()
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return fmt.Errorf("error reading body: %s", err)
-	}
-
-	if res.StatusCode != 200 {
-		return fmt.Errorf("error return code: %d", res.StatusCode)
+		return fmt.Errorf("error requesting token, %v", err)
 	}
 
 	token = &authToken{}
-	err = json.Unmarshal([]byte(body), token)
+	err = json.Unmarshal(body, token)
 	if err != nil {
 		return fmt.Errorf("error parsing JSON: %s", err)
 	}
@@ -224,36 +213,13 @@ func requestToken(refreshTokenStr string) error {
 	return nil
 }
 
-func refreshToken() error {
-	log.Println("Refreshing saved token.")
-	return requestToken(token.RefreshToken)
-}
-
 func requestAccounts() (*accountReq, error) {
+	log.Printf("Requesting accounts.")
 	url := fmt.Sprintf("%sv1/accounts", token.APIServer)
-	log.Printf("Sending GET to %s", url)
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("err creating request, %v", err)
-	}
 
-	auth := fmt.Sprintf("Bearer %s", token.AccessToken)
-	request.Header.Set("Authorization", auth)
-	client := &http.Client{}
-	res, err := client.Do(request)
+	body, err := doReq(url, true)
 	if err != nil {
-		return nil, fmt.Errorf("error getting accounts, %v", err)
-	}
-	defer res.Body.Close()
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, fmt.Errorf("error reading body: %s", err)
-	}
-	// log.Printf("Response: %s\n", string(body))
-
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("error return code: %d", res.StatusCode)
+		return nil, fmt.Errorf("error requesting accounts, %v", err)
 	}
 
 	accounts := &accountReq{}
@@ -261,7 +227,6 @@ func requestAccounts() (*accountReq, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error parsing JSON: %s", err)
 	}
-	log.Printf("Accounts requested successfully.")
 	// log.Printf("%+v\n", accounts)
 
 	return accounts, nil
@@ -296,6 +261,7 @@ func saveAccounts(accounts *accountReq) error {
 }
 
 func loadAccounts() ([]account, error) {
+	log.Println("Loading Accounts.")
 	accounts := make([]account, 0)
 	err := db.View(func(tx *bolt.Tx) error {
 		bk := tx.Bucket([]byte("ACCOUNTS"))
@@ -320,11 +286,11 @@ func loadAccounts() ([]account, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not load accounts, %v", err)
 	}
-	log.Println("Successfully loaded Accounts.")
 	return accounts, nil
 }
 
 func requestActivities(accountID string) error {
+	log.Printf("Requesting Activities.")
 	// start with the most recent 30 days
 	startDate := time.Now().AddDate(0, 0, -30)
 	endDate := time.Now()
@@ -332,7 +298,7 @@ func requestActivities(accountID string) error {
 	days := (365 * 2.25) / 30 // number of 30 day blocks in 2 1/4 years - go back to fall 2015
 	for i := 0; i <= int(days); i++ {
 		url := fmt.Sprintf("%sv1/accounts/%s/activities?startTime=%s&endTime=%s", token.APIServer, accountID, startDate.Format(time.RFC3339), endDate.Format(time.RFC3339))
-		res, err := doReq(url)
+		res, err := doReq(url, true)
 		if err != nil {
 			return fmt.Errorf("error requesting accounts, %v", err)
 		}
@@ -342,25 +308,27 @@ func requestActivities(accountID string) error {
 		endDate = endDate.AddDate(0, 0, -30)
 	}
 
-	log.Printf("Activities requested successfully.")
 	// log.Printf("%+v\n", accounts)
 
 	return nil
 }
 
-func doReq(url string) ([]byte, error) {
+func doReq(url string, addAuth bool) ([]byte, error) {
 	log.Printf("Sending GET to %s", url)
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("err creating request, %v", err)
 	}
 
-	auth := fmt.Sprintf("Bearer %s", token.AccessToken)
-	request.Header.Set("Authorization", auth)
+	if addAuth {
+		auth := fmt.Sprintf("Bearer %s", token.AccessToken)
+		request.Header.Set("Authorization", auth)
+	}
+
 	client := &http.Client{}
 	res, err := client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("error getting accounts, %v", err)
+		return nil, fmt.Errorf("error performing request, %v", err)
 	}
 	defer res.Body.Close()
 
