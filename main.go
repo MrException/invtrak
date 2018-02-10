@@ -103,12 +103,34 @@ func main() {
 		if err == nil {
 			log.Printf("Loaded accounts: %v", accounts)
 		}
-	case "activities":
-		accountID := flag.Arg(0)
-		if len(accountID) == 0 {
-			err = fmt.Errorf("activities command requires an accountID argument")
+
+	case "refresh-activities":
+		arg := flag.Arg(0)
+		if len(arg) == 0 {
+			err = fmt.Errorf("refresh-activities command requires an accountID argument or 'all'")
 		}
-		err = requestActivities(accountID)
+		if arg == "all" {
+			err = refreshAllActivities()
+		} else {
+			err = refreshActivities(arg)
+		}
+
+	case "list-activities":
+		arg := flag.Arg(0)
+		if len(arg) == 0 {
+			err = fmt.Errorf("list-activities command requires an accountID argument")
+			break
+		}
+		var activities []Activity
+		activities, err = loadActivities(arg)
+		if err == nil {
+			if len(activities) == 0 {
+				log.Printf("No activities found for account %s. Try refresh-activites.", arg)
+			} else {
+				log.Printf("Activities for account %s: %s", arg, activities)
+			}
+		}
+
 	default:
 		err = fmt.Errorf("invalid command: %s", conf.command)
 	}
@@ -223,6 +245,7 @@ func loadToken() error {
 }
 
 func requestToken(refreshTokenStr string) error {
+	// todo: save the last use of the token, only do a request if needed using authToken.ExpiresIn
 	log.Println("Requesting new token.")
 	url := fmt.Sprintf("https://login.questrade.com/oauth2/token?grant_type=refresh_token&refresh_token=%s", refreshTokenStr)
 
@@ -322,6 +345,27 @@ func loadAccounts() ([]account, error) {
 	return accounts, nil
 }
 
+func refreshAllActivities() error {
+	accounts, err := loadAccounts()
+	if err != nil {
+		return err
+	}
+
+	for _, account := range accounts {
+		err = refreshActivities(account.Number)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+
+}
+
+func refreshActivities(accountID string) error {
+	return requestActivities(accountID)
+}
+
 func requestActivities(accountID string) error {
 	log.Printf("Requesting Activities.")
 	// start with the most recent 30 days
@@ -385,6 +429,37 @@ func saveActivities(body []byte, accountID string) ([]Activity, error) {
 		return nil, fmt.Errorf("could not save activities, %v", err)
 	}
 	return activities.Activities, nil
+}
+
+func loadActivities(accountID string) ([]Activity, error) {
+	log.Println("Loading Activities.")
+	activities := make([]Activity, 0)
+	err := db.View(func(tx *bolt.Tx) error {
+		bkName := fmt.Sprintf("ACTIVITIES-%s", accountID)
+		bk := tx.Bucket([]byte(bkName))
+		if bk == nil {
+			return fmt.Errorf("couldn't get %s bucket", bkName)
+		}
+
+		c := bk.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			act := &Activity{}
+			err := json.Unmarshal(v, act)
+			if err != nil {
+				return fmt.Errorf("could not unmarshal activity: %v", err)
+			}
+
+			activities = append(activities, *act)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("could not load activities, %v", err)
+	}
+	log.Printf("Found %d activities.", len(activities))
+	return activities, nil
 }
 
 func prettyJSON(obj interface{}) string {
