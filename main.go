@@ -25,6 +25,10 @@ type authToken struct {
 	APIServer    string `json:"api_server"`
 }
 
+func (t authToken) String() string {
+	return prettyJSON(t)
+}
+
 type account struct {
 	Type              string `json:"type"`
 	Number            string `json:"number"`
@@ -34,26 +38,34 @@ type account struct {
 	ClientAccountType string `json:"clientAccountType"`
 }
 
+func (a account) String() string {
+	return prettyJSON(a)
+}
+
 type accountReq struct {
 	Accounts []account `json:"accounts"`
 	UserID   int       `json:"userId"`
 }
 
 type Activity struct {
-		TradeDate       string  `json:"tradeDate"`
-		TransactionDate string  `json:"transactionDate"`
-		SettlementDate  string  `json:"settlementDate"`
-		Action          string  `json:"action"`
-		Symbol          string  `json:"symbol"`
-		SymbolID        int     `json:"symbolId"`
-		Description     string  `json:"description"`
-		Currency        string  `json:"currency"`
-		Quantity        int     `json:"quantity"`
-		Price           float64 `json:"price"`
-		GrossAmount     float64 `json:"grossAmount"`
-		Commission      float64 `json:"commission"`
-		NetAmount       float64 `json:"netAmount"`
-		Type            string  `json:"type"`
+	TradeDate       string  `json:"tradeDate"`
+	TransactionDate string  `json:"transactionDate"`
+	SettlementDate  string  `json:"settlementDate"`
+	Action          string  `json:"action"`
+	Symbol          string  `json:"symbol"`
+	SymbolID        int     `json:"symbolId"`
+	Description     string  `json:"description"`
+	Currency        string  `json:"currency"`
+	Quantity        int     `json:"quantity"`
+	Price           float64 `json:"price"`
+	GrossAmount     float64 `json:"grossAmount"`
+	Commission      float64 `json:"commission"`
+	NetAmount       float64 `json:"netAmount"`
+	Type            string  `json:"type"`
+}
+
+func (a Activity) String() string {
+	return prettyJSON(a)
 }
 
 type ActivitiesReq struct {
@@ -355,7 +367,7 @@ func saveActivities(body []byte, accountID string) ([]Activity, error) {
 		}
 
 		for _, activity := range activities.Activities {
-			logJSON(activity)
+			log.Printf("JSON: %s", activity)
 			activityBytes, err := json.Marshal(activity)
 			if err != nil {
 				return fmt.Errorf("could not marshal entry json: %v", err)
@@ -375,9 +387,9 @@ func saveActivities(body []byte, accountID string) ([]Activity, error) {
 	return activities.Activities, nil
 }
 
-func logJSON(obj interface{}) {
+func prettyJSON(obj interface{}) string {
 	out, _ := json.MarshalIndent(obj, "", "  ")
-	log.Printf("JSON: %s", string(out))
+	return string(out)
 }
 
 func doReq(url string, addAuth bool) ([]byte, error) {
