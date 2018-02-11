@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -48,6 +49,7 @@ type accountReq struct {
 }
 
 type Activity struct {
+	ID              int     `json:"id"`
 	TradeDate       string  `json:"tradeDate"`
 	TransactionDate string  `json:"transactionDate"`
 	SettlementDate  string  `json:"settlementDate"`
@@ -413,12 +415,17 @@ func saveActivities(body []byte, accountID string) ([]Activity, error) {
 		}
 
 		for _, activity := range activities.Activities {
-			log.Printf("JSON: %s", activity)
+			// log.Printf("JSON: %s", prettyJSON(activity))
+			seq, err := bk.NextSequence()
+			if err != nil {
+				return fmt.Errorf("could not get next sequence from bucket")
+			}
+			activity.ID = int(seq)
 			activityBytes, err := json.Marshal(activity)
 			if err != nil {
 				return fmt.Errorf("could not marshal entry json: %v", err)
 			}
-			err = bk.Put([]byte(activity.TradeDate), activityBytes)
+			err = bk.Put(itob(activity.ID), activityBytes)
 			if err != nil {
 				return fmt.Errorf("could not insert activity: %v", err)
 			}
@@ -498,4 +505,11 @@ func doReq(url string, addAuth bool) ([]byte, error) {
 	}
 
 	return body, nil
+}
+
+// itob returns an 8-byte big endian representation of v.
+func itob(v int) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(v))
+	return b
 }
