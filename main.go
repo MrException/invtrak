@@ -376,7 +376,7 @@ func requestActivities(accountID string) error {
 	startDate := time.Now().AddDate(0, 0, -30)
 	endDate := time.Now()
 
-	days := (365 * 2.25) / 30 // number of 30 day blocks in 2 1/4 years - go back to fall 2015
+	days := (365 * 2.5) / 30 // number of 30 day blocks in 2 1/2 years - go back to fall 2015
 	for i := 0; i <= int(days); i++ {
 		url := fmt.Sprintf("%sv1/accounts/%s/activities?startTime=%s&endTime=%s", token.APIServer, accountID, startDate.Format(time.RFC3339), endDate.Format(time.RFC3339))
 		res, err := doReq(url, true)
