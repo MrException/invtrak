@@ -135,6 +135,8 @@ func main() {
 		err = fmt.Errorf("invalid command: %s", conf.command)
 	}
 
+	db.Close()
+
 	if err != nil {
 		log.Fatal(err)
 	}
