@@ -75,8 +75,8 @@ func requestActivities(accountID string) error {
 		}
 		// log.Printf("Response: %s\n", string(res))
 
-		startDate = startDate.AddDate(0, 0, -30)
-		endDate = endDate.AddDate(0, 0, -30)
+		startDate = startDate.AddDate(0, 0, -31)
+		endDate = endDate.AddDate(0, 0, -31)
 	}
 
 	// log.Printf("%+v\n", accounts)
