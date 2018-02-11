@@ -14,7 +14,8 @@ import (
 )
 
 type cliConfig struct {
-	command string
+	command   string
+	tradeType string
 }
 
 type authToken struct {
@@ -54,6 +55,7 @@ var token *authToken
 func init() {
 	conf = &cliConfig{}
 	flag.StringVar(&conf.command, "command", "list-accounts", "Command to run: init, list-accounts, activities")
+	flag.StringVar(&conf.tradeType, "trade-type", "all", "Type of trade, default 'all'")
 }
 
 func main() {
@@ -97,7 +99,7 @@ func main() {
 			break
 		}
 		var activities []Activity
-		activities, err = loadActivities(arg)
+		activities, err = loadActivities(arg, conf.tradeType)
 		if err == nil {
 			if len(activities) == 0 {
 				log.Printf("No activities found for account %s. Try refresh-activites.", arg)

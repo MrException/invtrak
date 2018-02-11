@@ -126,7 +126,7 @@ func saveActivities(body []byte, accountID string) ([]Activity, error) {
 	return activities.Activities, nil
 }
 
-func loadActivities(accountID string) ([]Activity, error) {
+func loadActivities(accountID string, tradeType string) ([]Activity, error) {
 	log.Println("Loading Activities.")
 	activities := make([]Activity, 0)
 	err := db.View(func(tx *bolt.Tx) error {
@@ -144,7 +144,11 @@ func loadActivities(accountID string) ([]Activity, error) {
 				return fmt.Errorf("could not unmarshal activity: %v", err)
 			}
 
-			activities = append(activities, *act)
+			if tradeType == "all" || tradeType == act.Type {
+				activities = append(activities, *act)
+			} else {
+				log.Printf("Trade type %s doesn't match filtered type %s", act.Type, tradeType)
+			}
 		}
 
 		return nil
