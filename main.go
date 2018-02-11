@@ -85,6 +85,7 @@ func main() {
 		arg := flag.Arg(0)
 		if len(arg) == 0 {
 			err = fmt.Errorf("refresh-activities command requires an accountID argument or 'all'")
+			break
 		}
 		if arg == "all" {
 			err = refreshAllActivities()
@@ -106,6 +107,18 @@ func main() {
 			} else {
 				log.Printf("Activities for account %s: %s", arg, activities)
 			}
+		}
+
+	case "list-symbols":
+		arg := flag.Arg(0)
+		if len(arg) == 0 {
+			err = fmt.Errorf("list-activities command requires an accountID argument")
+			break
+		}
+		var symbols []string
+		symbols, err = loadAllHistoricalSymbols(arg)
+		if err == nil {
+			log.Printf("All symbols traded in account %s: %s", arg, symbols)
 		}
 
 	default:

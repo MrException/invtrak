@@ -146,8 +146,6 @@ func loadActivities(accountID string, tradeType string) ([]Activity, error) {
 
 			if tradeType == "all" || tradeType == act.Type {
 				activities = append(activities, *act)
-			} else {
-				log.Printf("Trade type %s doesn't match filtered type %s", act.Type, tradeType)
 			}
 		}
 
@@ -159,4 +157,23 @@ func loadActivities(accountID string, tradeType string) ([]Activity, error) {
 	}
 	log.Printf("Found %d activities.", len(activities))
 	return activities, nil
+}
+
+func loadAllHistoricalSymbols(accountID string) ([]string, error) {
+	set := make(map[string]bool)
+	activities, err := loadActivities(accountID, "Trades")
+	if err != nil {
+		return nil, err
+	}
+
+	for _, trade := range activities {
+		set[trade.Symbol] = true
+	}
+
+	symbols := make([]string, 0, len(set))
+	for k := range set {
+		symbols = append(symbols, k)
+	}
+
+	return symbols, nil
 }
