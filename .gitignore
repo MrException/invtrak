@@ -3,3 +3,4 @@ vendor/
 *.exe
 *.db
 *.db.lock
+tmp
