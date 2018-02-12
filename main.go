@@ -115,11 +115,19 @@ func main() {
 			err = fmt.Errorf("list-activities command requires an accountID argument")
 			break
 		}
-		var symbols []string
+		var symbols map[string]int
 		symbols, err = loadAllHistoricalSymbols(arg)
 		if err == nil {
 			log.Printf("All symbols traded in account %s: %s", arg, symbols)
 		}
+
+	case "symbol-history":
+		arg := flag.Arg(0)
+		if len(arg) == 0 {
+			err = fmt.Errorf("symbol-history command requires a symbol id argument")
+			break
+		}
+		err = requestCandles(arg)
 
 	default:
 		err = fmt.Errorf("invalid command: %s", conf.command)

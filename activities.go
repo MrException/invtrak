@@ -159,20 +159,15 @@ func loadActivities(accountID string, tradeType string) ([]Activity, error) {
 	return activities, nil
 }
 
-func loadAllHistoricalSymbols(accountID string) ([]string, error) {
-	set := make(map[string]bool)
+func loadAllHistoricalSymbols(accountID string) (map[string]int, error) {
+	symbols := make(map[string]int)
 	activities, err := loadActivities(accountID, "Trades")
 	if err != nil {
 		return nil, err
 	}
 
 	for _, trade := range activities {
-		set[trade.Symbol] = true
-	}
-
-	symbols := make([]string, 0, len(set))
-	for k := range set {
-		symbols = append(symbols, k)
+		symbols[trade.Symbol] = trade.SymbolID
 	}
 
 	return symbols, nil
